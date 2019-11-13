@@ -1,0 +1,122 @@
+
+-- Insert operation parameters
+truncate table "MovieLens.db.hdb.apl::recommendation.function_header";
+insert into "MovieLens.db.hdb.apl::recommendation.function_header" values ('Oid', '#42');
+insert into "MovieLens.db.hdb.apl::recommendation.function_header" values ('LogLevel', '8');
+
+truncate table "MovieLens.db.hdb.apl::recommendation.operation_config";
+insert into "MovieLens.db.hdb.apl::recommendation.operation_config" values ('APL/ModelType'  , 'recommendation');
+insert into "MovieLens.db.hdb.apl::recommendation.operation_config" values ('APL/User'       , 'USERID'        ); -- mandatory
+insert into "MovieLens.db.hdb.apl::recommendation.operation_config" values ('APL/Item'       , 'MOVIEID'       ); -- mandatory
+insert into "MovieLens.db.hdb.apl::recommendation.operation_config" values ('APL/RuleWeight' , 'Support'       );
+
+-- Clear other tables content
+truncate table "MovieLens.db.hdb.apl::recommendation.variable_descs";
+truncate table "MovieLens.db.hdb.apl::recommendation.operation_log";
+truncate table "MovieLens.db.hdb.apl::recommendation.summary";
+truncate table "MovieLens.db.hdb.apl::recommendation.indicators";
+
+truncate table "MovieLens.db.hdb.apl::recommendation.model";
+truncate table "MovieLens.db.hdb.apl::recommendation.model_node_user";
+truncate table "MovieLens.db.hdb.apl::recommendation.model_node_movie";
+truncate table "MovieLens.db.hdb.apl::recommendation.model_links";
+truncate table "MovieLens.db.hdb.apl::recommendation.model_sql_code";
+
+call "MovieLens.db.hdb.apl.afllang::recommendation"(
+  "MovieLens.db.hdb.apl::recommendation.function_header",
+  "MovieLens.db.hdb.apl::recommendation.operation_config",
+  "MovieLens.db.hdb.apl::recommendation.variable_descs",
+  "MovieLens.db.data::ratings",
+  "MovieLens.db.hdb.apl::recommendation.model",
+  "MovieLens.db.hdb.apl::recommendation.model_node_user",
+  "MovieLens.db.hdb.apl::recommendation.model_node_movie",
+  "MovieLens.db.hdb.apl::recommendation.model_links",
+  "MovieLens.db.hdb.apl::recommendation.operation_log",
+  "MovieLens.db.hdb.apl::recommendation.summary",
+  "MovieLens.db.hdb.apl::recommendation.indicators",
+  "MovieLens.db.hdb.apl::recommendation.model_sql_code") with overview;
+
+
+--The operation log:
+select * from "MovieLens.db.hdb.apl::recommendation.operation_log";
+--The summary:
+select * from "MovieLens.db.hdb.apl::recommendation.summary";
+--The indicators:
+select * from "MovieLens.db.hdb.apl::recommendation.indicators";
+--The operation result log:
+select * from "MovieLens.db.hdb.apl::recommendation.model_sql_code";
+
+
+
+--Validate the collaborative filtering results
+--how many users will actually get recommendations
+select reco_count, count(1) as user_count
+from (
+  select userid, max(rank) as reco_count
+  from "MovieLens.db.hdb.apl.views::recommendation_collaborative"
+  group by userid
+) group by reco_count order by 1 desc;
+
+select
+    count(1) as movie_count
+  , count(1) * 100 / (select count(1) as cnt from "MovieLens.db.data::movies") as movie_ratio
+from (
+  select movieid
+  from "MovieLens.db.hdb.apl.views::recommendation_collaborative"
+  group by movieid
+);
+
+
+
+select
+    count(1) as movie_count
+  , count(1) * 100 / (select count(1) as cnt from "MovieLens.db.data::movies") as movie_ratio
+from (
+    select movieid
+    from (
+      select kxnodesecond   as movieid from "MovieLens.db.hdb.apl::recommendation.model_links" where graph_name = 'Item' group by  kxnodesecond
+      union all
+      select kxnodesecond_2 as movieid from "MovieLens.db.hdb.apl::recommendation.model_links" where graph_name = 'Item' group by  kxnodesecond_2
+    ) group by movieid
+);
+
+--Validate the content-based filtering results
+
+select reco_count, count(1) as movie_count
+from (
+  select movieid, max(rank) as reco_count
+  from "MovieLens.db.hdb.apl.views::recommendation_contentbased"
+  group by movieid
+) group by reco_count;
+
+
+
+select
+    count(1) as movie_count
+  , count(1) * 100 / (select count(1) as cnt from "MovieLens.db.data::movies" ) as movie_ratio
+from (
+  select movieid
+  from "MovieLens.db.hdb.apl.views::recommendation_contentbased"
+  group by movieid
+);
+
+
+
+select rating_count, count(1) as movie_count
+from (
+  select ratings.movieid, count(1) as rating_count
+  from "MovieLens.db.data::ratings" ratings
+  left outer join (
+    select movieid
+    from (
+      select movieid
+      from (
+        select kxnodesecond   as movieid from "MovieLens.db.hdb.apl::recommendation.model_links" where graph_name = 'Item' group by  kxnodesecond
+        union all
+        select kxnodesecond_2 as movieid from "MovieLens.db.hdb.apl::recommendation.model_links" where graph_name = 'Item' group by  kxnodesecond_2
+      ) group by movieid
+    )
+  ) t1 on (ratings.movieid = t1.movieid)
+  where t1.movieid is null
+  group by ratings.movieid
+) group by rating_count;
